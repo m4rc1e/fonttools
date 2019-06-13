@@ -6,7 +6,7 @@ from fontTools.ttLib.tables import otTables
 import pytest
 
 
-class BuilderTest(object):
+class BuilderSetup(object):
     GLYPHS = (
         ".notdef space zero one two three four five six "
         "A B C a b c grave acute cedilla f_f_i f_i c_t"
@@ -17,6 +17,8 @@ class BuilderTest(object):
     ANCHOR2 = builder.buildAnchor(22, -22)
     ANCHOR3 = builder.buildAnchor(33, -33)
 
+
+class BuilderTest(BuilderSetup):
     def test_buildAnchor_format1(self):
         anchor = builder.buildAnchor(23, 42)
         assert getXML(anchor.toXML) == [
