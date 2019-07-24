@@ -63,18 +63,21 @@ def unbuildBaseArray(baseArray):
 
 
 def unbuildBaseRecord(baseRecord):
+    """otTables.BaseRecord --> [{"x": 10, "y": 10}, {"x": 20, "y": 20}, ...]"""
     if not baseRecord:
         return None
     return [unbuildAnchor(a) for a in baseRecord.BaseAnchor]
 
 
 def unbuildComponentRecord(componentRecord):
+    """otTables.ComponentRecord --> [{"x": 10, "y": 10}, {"x": 20, "y": 20}, ...]"""
     if not componentRecord:
         return None
     return [unbuildAnchor(a) for a in componentRecord.LigatureAnchor]
 
 
 def unbuildCursivePosSubtable(cursivePos):
+    """otTables.CursivePos --> {"alef": ({"x": 10, "y": 10}, {"x": 100, "y": 100})}"""
     results = {}
     for glyph, rec in zip(cursivePos.Coverage.glyphs, cursivePos.EntryExitRecord):
         results[glyph] = (unbuildAnchor(rec.EntryAnchor), unbuildAnchor(rec.ExitAnchor))
@@ -82,6 +85,7 @@ def unbuildCursivePosSubtable(cursivePos):
 
 
 def unbuildDevice(device):
+    """otTables.Device --> {8:+1, 10:-3, ...}"""
     sizes = range(device.StartSize, device.EndSize + 1)
     deltas = device.DeltaValue
     return dict(zip(sizes, deltas))
@@ -195,6 +199,7 @@ def unbuildPairPosGlyphsSubtable(subtable):
 
 
 def unbuildSinglePosSubtable(singlePos):
+    """otTables.SinglePos --> {glyphName: {"XPlacement: 100, "YPlacement": 100}}"""
     result = {}
     if singlePos.Format == 1:
         for glyph in singlePos.Coverage.glyphs:
@@ -225,6 +230,7 @@ def unbuildValue(valueRecord):
 
 
 def unbuildAttachList(attachList):
+    """otTables.AttachList --> {"glyphName": [4, 23]}"""
     if not attachList:
         return None
     coverage = unbuildCoverage(attachList.Coverage)
@@ -233,20 +239,24 @@ def unbuildAttachList(attachList):
 
 
 def unbuildAttachPoint(attachPoint):
+    """otTables.AttachPoint --> [4, 23, 41]"""
     if not attachPoint:
         return None
     return attachPoint.PointIndex
 
 
 def unbuildCaretValueForCoord(caretValue):
+    """otTables.CaretValue --> 500"""
     return caretValue.Coordinate
 
 
 def unbuildCaretValueForPoint(caretValue):
+    """otTables.CaretValue, format 2 --> 4"""
     return caretValue.CaretValuePoint
 
 
 def unbuildLigCaretList(ligCaretList):
+    """otTables.LigCaretList --> {"f_f_i": [300, 600]}, {"c_t": [28]}"""
     if not ligCaretList:
         return None
     glyphs = unbuildCoverage(ligCaretList.Coverage)
@@ -255,6 +265,7 @@ def unbuildLigCaretList(ligCaretList):
 
 
 def unbuildLigGlyph(ligGlyph):
+    """otTables.LigGlyph; None for empty coords/points --> ([500], [4])"""
     if not ligGlyph:
         return None
     results = []
@@ -267,6 +278,7 @@ def unbuildLigGlyph(ligGlyph):
 
 
 def unbuildMarkGlyphSetsDef(markGlyphSetsDef):
+    """otTables.MarkGlyphSetsDef --> [{"acute","grave"}, {"caron","grave"}]"""
     if not markGlyphSetsDef:
         return None
     return [set(unbuildCoverage(m)) for m in markGlyphSetsDef.Coverage]
