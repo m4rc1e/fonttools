@@ -12,8 +12,13 @@ def unbuildLookup(lookup):
         for subtable_type, unbuilder in UNBUILD_MAP.items():
             if isinstance(subtable, subtable_type):
                 results.append(unbuilder(subtable))
-    return results, lookup.LookupFlag
+    return results
 
+
+def unbuildGSUB(table, unbuild_nested=False):
+    # TODO
+    lookups = [unbuildLookup(l) for l in table.LookupList.Lookup]
+    return lookups
 
 # GSUB
 
@@ -36,6 +41,63 @@ def unbuildLigatureSubstSubtable(ligatureSubstSubtable):
         for ligature in ligatures:
             results[tuple([k] + ligature.Component)] = ligature.LigGlyph
     return results
+
+
+
+def unbuildClassDef(classDef):
+    results = {}
+    for k, v in classDef.classDefs.items():
+        if v not in results:
+            results[v] = []
+        results[v].append(k)
+    return results
+
+
+def unbuildChainContSubtable(subtable):
+    results = {"lookahead": [], "backtrack": [], "lookup_idx": [], "input": []}
+    if subtable.Format == 1:
+        # Just padauk uses this Format
+        for set_ in subtable.ChainSubRuleSet:
+            for rule in set_.ChainSubRule:
+                results["lookahead"].append(rule.LookAhead)
+                results["backtrack"].append(rule.Backtrack)
+                results["input"].append(rule.Input)
+                for record in rule.SubstLookupRecord:
+                    results["lookup_idx"].append(record.LookupListIndex)
+
+    elif subtable.Format == 2:
+        backtrack_classes = unbuildClassDef(subtable.BacktrackClassDef)
+        lookahead_classes = unbuildClassDef(subtable.LookAheadClassDef)
+        for set_ in subtable.ChainSubClassSet:
+            if not set_:
+                continue
+            idxs, lookaheads, backtracks = [], [], []
+            for rule in set_.ChainSubClassRule:
+                results["input"].append(rule.Input)
+                for record in rule.SubstLookupRecord:
+                    idxs.append(record.LookupListIndex)
+                for backtrack in rule.Backtrack:
+                    backtracks.append(tuple(backtrack_classes[backtrack]))
+                for lookahead in rule.LookAhead:
+                    lookaheads.append(tuple(lookahead_classes[lookahead]))
+
+                results["lookup_idx"].append(idxs)
+                results["backtrack"].append(backtracks)
+                results["lookahead"].append(lookaheads)
+                idxs, lookaheads, backtracks = [], [], []
+
+    elif subtable.Format == 3:
+        for record in subtable.SubstLookupRecord:
+            results['lookup_idx'].append(record.LookupListIndex)
+        for coverage in subtable.LookAheadCoverage:
+            results["lookahead"].append(tuple(coverage.glyphs))
+        for coverage in subtable.BacktrackCoverage:
+            results["backtrack"].append(tuple(coverage.glyphs))
+    else:
+        raise NotImplemented("Format {} is not supported".format(subtable.Format))
+    return results
+
+
 
 
 # GPOS
@@ -290,6 +352,7 @@ UNBUILD_MAP = {
     otTables.MultipleSubst: unbuildMultipleSubstSubtable,
     otTables.AlternateSubst: unbuildAlternateSubstSubtable,
     otTables.LigatureSubst: unbuildLigatureSubstSubtable,
+    otTables.ChainContextSubst: unbuildChainContSubtable,
     # GPOS
     otTables.SinglePos: unbuildSinglePosSubtable,
     otTables.PairPos: unbuildPairPosSubtable,
