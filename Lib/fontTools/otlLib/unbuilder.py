@@ -53,6 +53,51 @@ def unbuildClassDef(classDef):
     return results
 
 
+def unbuildContSubtable(subtable):
+    results = {"input": [], "lookup_idx": []}
+    if subtable.Format == 1:
+        # TODO do we want to store the inputs and lookup_idxs as two seperate lists?
+        # or do we want {"input1": output1...}
+        """
+        Notes on Format 5.1: Simple Glyph Contexts
+        https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#51-context-substitution-format-1-simple-glyph-contexts
+        Swap each glyph in a context sequence with another glyph.
+        Individual glyphs seems to get swapped using a lookup for each glyph.
+
+        - Coverage table holds the first glyph for each context
+        - Coverage table does not contain duplicates glyphs
+        - Each glyph in the coverage table points to its own SubRuleSet table which defines SubRules.
+          This extra table allows us to map multiple contexts to a single glyph
+        - SubRules contain the rest of the glyphs in the context
+        - SubRules also contain a lookup table
+        - SubRule lookup table contains a lookup for each glyph in the context.
+
+        """
+        for prefix in subtable.Coverage.glyphs:
+            for ruleset in subtable.SubRuleSet:
+                for rule in ruleset.SubRule:
+                    glyph_input = [prefix] + r.Input
+                    lookup_idxs = [r.LookupListIndex for r in rule.SubstLookupRecord]
+                    results['input'].append(glyph_input)
+                    results['lookup_idx'].append(lookup_idxs)
+
+    if subtable.Format == 2:
+        # TODO write function to unbuild ClassDefs
+        prefix = subtable.Coverage.glyphs
+        classes = unbuildClassDef(subtable.ClassDef)
+        for ruleset in subtable.SubClassSet:
+            if ruleset is None:
+                continue
+            for rule in ruleset.SubClassRule:
+                c = [classes[r] for r in rule.Class]
+                glyph_input = [prefix] + c
+                lookup_idxs = [r.LookupListIndex for r in rule.SubstLookupRecord]
+                results['input'].append(glyph_input)
+                results['lookup_idx'].append(lookup_idxs)
+    # TODO add Format 3
+    return results
+
+
 def unbuildChainContSubtable(subtable):
     results = {"lookahead": [], "backtrack": [], "lookup_idx": [], "input": []}
     if subtable.Format == 1:
