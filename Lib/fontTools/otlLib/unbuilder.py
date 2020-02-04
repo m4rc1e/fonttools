@@ -1,24 +1,51 @@
 from fontTools.ttLib import TTFont
 from fontTools.ttLib.tables import otTables
 
-
 def unbuildCoverage(coverage):
     return coverage.glyphs
 
 
 def unbuildLookup(lookup):
-    results = []
+    results = {
+        "subtables": [],
+        "flag": lookup.LookupFlag,
+        "type": lookup.LookupType,
+        "format": lookup.SubTable[0].Format
+    }
     for subtable in lookup.SubTable:
         for subtable_type, unbuilder in UNBUILD_MAP.items():
             if isinstance(subtable, subtable_type):
-                results.append(unbuilder(subtable))
+                results["subtables"].append(unbuilder(subtable))
     return results
 
 
-def unbuildGSUB(table, unbuild_nested=False):
+def unbuildGSUB(table):
     # TODO
-    lookups = [unbuildLookup(l) for l in table.LookupList.Lookup]
-    return lookups
+    results = {"version": table.Version}
+    results["lookups"] = [unbuildLookup(l) for l in table.LookupList.Lookup]
+    results["features"] = [unbuildFeature(f) for f in table.FeatureList.FeatureRecord]
+    results["scripts"] = [unbuildScript(s) for s in table.ScriptList.ScriptRecord]
+    return results
+
+
+def unbuildFeature(feature):
+    return {"FeatureParam": None, # TODO
+            "lookup_indices": feature.Feature.LookupListIndex,
+            "tag": feature.FeatureTag}
+
+
+def unbuildScript(script):
+    return {"DefaultFeatureIndexs": script.Script.DefaultLangSys.FeatureIndex,
+            "LangSysRecords": [unbuildLangSysRecord(l) for l in script.Script.LangSysRecord],
+            "tag": script.ScriptTag,
+    }
+
+def unbuildLangSysRecord(lang):
+    # Do not return lookupOrder since it is NULL
+    # 
+    return {"RequiredFeatureIndex": 0xFFFF, # TODO get this from font
+            "FeatureIndices": lang.LangSys.FeatureIndex,
+            "tag": lang.LangSysTag}
 
 # GSUB
 
@@ -54,9 +81,8 @@ def unbuildClassDef(classDef):
 
 
 def unbuildContSubtable(subtable):
-    results = {"input": [], "lookup_idx": []}
+    results = {"rules": [], "format": subtable.Format}
     if subtable.Format == 1:
-        # TODO do we want to store the inputs and lookup_idxs as two seperate lists?
         # or do we want {"input1": output1...}
         """
         Notes on Format 5.1: Simple Glyph Contexts
@@ -76,68 +102,71 @@ def unbuildContSubtable(subtable):
         for prefix in subtable.Coverage.glyphs:
             for ruleset in subtable.SubRuleSet:
                 for rule in ruleset.SubRule:
-                    glyph_input = [prefix] + r.Input
-                    lookup_idxs = [r.LookupListIndex for r in rule.SubstLookupRecord]
-                    results['input'].append(glyph_input)
-                    results['lookup_idx'].append(lookup_idxs)
+                    rule_ = {
+                        'input': [prefix] + rule.Input,
+                        'lookup_indices': [r.LookupListIndex for r in rule.SubstLookupRecord]
+                    }
+                    results['rules'].append(rule_)
 
     if subtable.Format == 2:
         # TODO write function to unbuild ClassDefs
         prefix = subtable.Coverage.glyphs
         classes = unbuildClassDef(subtable.ClassDef)
+        results['classes'] = {"class{}".format(k): v for k,v in classes.items()}
         for ruleset in subtable.SubClassSet:
             if ruleset is None:
                 continue
             for rule in ruleset.SubClassRule:
-                c = [classes[r] for r in rule.Class]
-                glyph_input = [prefix] + c
-                lookup_idxs = [r.LookupListIndex for r in rule.SubstLookupRecord]
-                results['input'].append(glyph_input)
-                results['lookup_idx'].append(lookup_idxs)
-    # TODO add Format 3
+                rule_ = {'input': prefix + ["class{}".format(r) for r in rule.Class],
+                         'lookup_idx': [r.LookupListIndex for r in rule.SubstLookupRecord]
+                }
+                results['rules'].append(rule_)
+    # TODO add Format 3: no fonts found in Google Fonts!
     return results
 
 
 def unbuildChainContSubtable(subtable):
-    results = {"lookahead": [], "backtrack": [], "lookup_idx": [], "input": []}
+    results = {"rules": [], "format": subtable.Format}
     if subtable.Format == 1:
-        # Just padauk uses this Format
-        for set_ in subtable.ChainSubRuleSet:
-            for rule in set_.ChainSubRule:
-                results["lookahead"].append(rule.LookAhead)
-                results["backtrack"].append(rule.Backtrack)
-                results["input"].append(rule.Input)
-                for record in rule.SubstLookupRecord:
-                    results["lookup_idx"].append(record.LookupListIndex)
+        for ruleset in subtable.ChainSubRuleSet:
+            for rule in ruleset.ChainSubRule:
+                for prefix in subtable.Coverage.glyphs:
+                    rule_ = {"input": [prefix] + rule.Input,
+                             "lookahead": rule.LookAhead,
+                             "backtrack": rule.Backtrack,
+                             "lookup_indices": [r.LookupListIndex for r in rule.SubstLookupRecord]
+                    }
+                    results['rules'].append(rule_)
 
     elif subtable.Format == 2:
         backtrack_classes = unbuildClassDef(subtable.BacktrackClassDef)
         lookahead_classes = unbuildClassDef(subtable.LookAheadClassDef)
+        input_classes = unbuildClassDef(subtable.InputClassDef)
+        results["backtrack_classes"] = {"backtrack{}".format(k): v for k,v in backtrack_classes.items()}
+        results["lookahead_classes"] = {"lookahead{}".format(k): v for k,v in lookahead_classes.items()}
+        results["input_classes"] = {"input{}".format(k): v for k,v in input_classes.items()}
+
         for set_ in subtable.ChainSubClassSet:
             if not set_:
                 continue
-            idxs, lookaheads, backtracks = [], [], []
             for rule in set_.ChainSubClassRule:
-                results["input"].append(rule.Input)
-                for record in rule.SubstLookupRecord:
-                    idxs.append(record.LookupListIndex)
-                for backtrack in rule.Backtrack:
-                    backtracks.append(tuple(backtrack_classes[backtrack]))
-                for lookahead in rule.LookAhead:
-                    lookaheads.append(tuple(lookahead_classes[lookahead]))
-
-                results["lookup_idx"].append(idxs)
-                results["backtrack"].append(backtracks)
-                results["lookahead"].append(lookaheads)
-                idxs, lookaheads, backtracks = [], [], []
+                rule_ = {"input": subtable.Coverage.glyphs + rule.Input,
+                         "lookahead": ["lookahead{}".format(i) for i in rule.LookAhead],
+                         "backtrack": ["backtrack{}".format(i) for i in rule.Backtrack],
+                         "lookup_indices": [r.LookupListIndex for r in rule.SubstLookupRecord]
+                }
+                results['rules'].append(rule_)
 
     elif subtable.Format == 3:
+        results = {"lookahead": [], "backtrack": [], "lookup_idx": [], "input": []}
         for record in subtable.SubstLookupRecord:
             results['lookup_idx'].append(record.LookupListIndex)
         for coverage in subtable.LookAheadCoverage:
             results["lookahead"].append(tuple(coverage.glyphs))
         for coverage in subtable.BacktrackCoverage:
             results["backtrack"].append(tuple(coverage.glyphs))
+        for coverage in subtable.InputCoverage:
+            results["input"].append(tuple(coverage.glyphs))
     else:
         raise NotImplemented("Format {} is not supported".format(subtable.Format))
     return results
@@ -291,6 +320,9 @@ def unbuildPairPosClassesSubtable(pairPosClassesSubtable):
             if not any([vals[0], vals[1]]):
                 continue
             results[tuple(class1[idx1]), tuple(class2[idx2])] = vals
+            # TODO This won't work for raw json. It may be worth writing a json seriliaser
+            # it may be worth using references to classes instead and keeping the classes
+            # seperately. 
     return results
 
 
@@ -397,6 +429,7 @@ UNBUILD_MAP = {
     otTables.MultipleSubst: unbuildMultipleSubstSubtable,
     otTables.AlternateSubst: unbuildAlternateSubstSubtable,
     otTables.LigatureSubst: unbuildLigatureSubstSubtable,
+    otTables.ContextSubst: unbuildContSubtable,
     otTables.ChainContextSubst: unbuildChainContSubtable,
     # GPOS
     otTables.SinglePos: unbuildSinglePosSubtable,
