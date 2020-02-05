@@ -83,7 +83,6 @@ def unbuildClassDef(classDef):
 def unbuildContSubtable(subtable):
     results = {"rules": [], "format": subtable.Format}
     if subtable.Format == 1:
-        # or do we want {"input1": output1...}
         """
         Notes on Format 5.1: Simple Glyph Contexts
         https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#51-context-substitution-format-1-simple-glyph-contexts
@@ -109,7 +108,6 @@ def unbuildContSubtable(subtable):
                     results['rules'].append(rule_)
 
     if subtable.Format == 2:
-        # TODO write function to unbuild ClassDefs
         prefix = subtable.Coverage.glyphs
         classes = unbuildClassDef(subtable.ClassDef)
         results['classes'] = {"class{}".format(k): v for k,v in classes.items()}
@@ -118,7 +116,7 @@ def unbuildContSubtable(subtable):
                 continue
             for rule in ruleset.SubClassRule:
                 rule_ = {'input': prefix + ["class{}".format(r) for r in rule.Class],
-                         'lookup_idx': [r.LookupListIndex for r in rule.SubstLookupRecord]
+                         'lookup_indices': [r.LookupListIndex for r in rule.SubstLookupRecord]
                 }
                 results['rules'].append(rule_)
     # TODO add Format 3: no fonts found in Google Fonts!
@@ -158,9 +156,9 @@ def unbuildChainContSubtable(subtable):
                 results['rules'].append(rule_)
 
     elif subtable.Format == 3:
-        results = {"lookahead": [], "backtrack": [], "lookup_idx": [], "input": []}
+        results = {"lookahead": [], "backtrack": [], "lookup_indices": [], "input": []}
         for record in subtable.SubstLookupRecord:
-            results['lookup_idx'].append(record.LookupListIndex)
+            results['lookup_indices'].append(record.LookupListIndex)
         for coverage in subtable.LookAheadCoverage:
             results["lookahead"].append(tuple(coverage.glyphs))
         for coverage in subtable.BacktrackCoverage:
@@ -172,6 +170,7 @@ def unbuildChainContSubtable(subtable):
     return results
 
 
+# TODO add LookupType 8: Reverse Chaining Contextual Single Sub. No fonts found in Google Fonts!
 
 
 # GPOS
