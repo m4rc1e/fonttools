@@ -38,8 +38,9 @@ def all_glyphs(ttfont, ignore_features=["aalt", "c2sc"]):
 
     # attempt just gsub lookupType 1 with DFLT script
     for script in gsub['scripts']:
-        for f_idx in script['DefaultLangSys']["FeatureIndices"]:
-            feature = gsub["features"][f_idx]
+        lang_features = [gsub["features"][i] for i in script["DefaultLangSys"]["FeatureIndices"]]
+        lang_features.sort(key=lambda k: k["lookup_indices"])
+        for feature in lang_features:
             if feature["tag"] in ignore_features:
                 continue
             for l_idx in feature['lookup_indices']: # todo change
@@ -116,12 +117,12 @@ def _process_context2(lookup, results, feature, script, lang):
             pprint(subtable)
 
 
-def _process_chainingcontext3(lookup, results, feature, script, lang):
+def _process_chainingcontext3(lookup, results, feature, script, lang, limit=10000):
     for subtable in lookup["subtables"]:
         # we only want to append just the first and last glyph of the lookahead
         # and back track contexts due to run time.
-        backtrack = [subtable["backtrack"][0]] if subtable["backtrack"] else []
-        lookahead = [subtable["lookahead"][0]] if subtable["lookahead"] else []
+        backtrack = subtable["backtrack"][:limit] if subtable["backtrack"] else []
+        lookahead = subtable["lookahead"][:limit] if subtable["lookahead"] else []
         combos = backtrack + subtable["input"] + lookahead
         permutations = perms(combos)
         skipped = 0
@@ -187,6 +188,4 @@ if __name__ == "__main__":
         if isinstance(glyph, tuple):
             reorder_character_seq(font, glyphs[glyph])
     i = " ".join([g["input"] for g in glyphs.values()]) 
-    #print(i)
-    for _, g in glyphs.items():
-        print(_, g)
+    print(i)
