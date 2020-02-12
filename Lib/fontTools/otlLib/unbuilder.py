@@ -428,6 +428,54 @@ def unbuildMarkGlyphSetsDef(markGlyphSetsDef):
     return [set(unbuildCoverage(m)) for m in markGlyphSetsDef.Coverage]
 
 
+def unbuildGposContSubtable(subtable):
+    results = {"rules": [], "format": subtable.Format}
+    if subtable.Format == 1:
+        # Just padauk uses this Format
+        for set_ in subtable.ChainPosRuleSet:
+            for rule in set_.ChainPosRule:
+                for prefix in subtable.Coverage.glyphs:
+                    rule_ = {"input": [prefix] + rule.Input,
+                             "lookahead": rule.LookAhead,
+                             "backtrack": rule.Backtrack,
+                             "lookup_indices": [r.LookupListIndex for r in rule.PosLookupRecord]
+                    }
+                    results['rules'].append(rule_)
+
+    elif subtable.Format == 2:
+        # classes TODO see if we have a func for these
+        backtrack_classes = unbuildClassDef(subtable.BacktrackClassDef)
+        lookahead_classes = unbuildClassDef(subtable.LookAheadClassDef)
+        input_classes = unbuildClassDef(subtable.InputClassDef)
+        results["backtrack_classes"] = {"backtrack{}".format(k): v for k,v in backtrack_classes.items()}
+        results["lookahead_classes"] = {"lookahead{}".format(k): v for k,v in lookahead_classes.items()}
+        results["input_classes"] = {"input{}".format(k): v for k,v in input_classes.items()}
+
+        for set_ in subtable.ChainPosClassSet:
+            if not set_:
+                continue
+            for rule in set_.ChainPosClassRule:
+                rule_ = {"input": subtable.Coverage.glyphs + rule.Input,
+                         "lookahead": ["lookahead{}".format(i) for i in rule.LookAhead],
+                         "backtrack": ["backtrack{}".format(i) for i in rule.Backtrack],
+                         "lookup_indices": [r.LookupListIndex for r in rule.PosLookupRecord]
+                }
+                results['rules'].append(rule_)
+
+    elif subtable.Format == 3:
+        results = {"lookahead": [], "backtrack": [], "lookup_indices": [], "input": [], "format": subtable.Format}
+        for record in subtable.PosLookupRecord:
+            results['lookup_indices'].append(record.LookupListIndex)
+        for coverage in subtable.LookAheadCoverage:
+            results["lookahead"].append(tuple(coverage.glyphs))
+        for coverage in subtable.BacktrackCoverage:
+            results["backtrack"].append(tuple(coverage.glyphs))
+        for coverage in subtable.InputCoverage:
+            results["input"].append(tuple(coverage.glyphs))
+    else:
+        raise NotImplemented("Format {} is not supported".format(subtable.Format))
+    return results
+
 
 UNBUILD_MAP = {
     # GSUB
@@ -443,4 +491,5 @@ UNBUILD_MAP = {
     otTables.CursivePos: unbuildCursivePosSubtable,
     otTables.MarkBasePos: unbuildMarkBasePosSubtable,
     otTables.MarkLigPos: unbuildMarkLigPosSubtable,
+    otTables.ChainContextPos: unbuildGposContSubtable, 
 }
