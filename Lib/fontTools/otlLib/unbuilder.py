@@ -18,7 +18,7 @@ def unbuildLookup(lookup):
     return results
 
 
-def unbuildGSUB(table):
+def unbuildTable(table):
     return {"version": table.Version,
             "lookups": [unbuildLookup(l) for l in table.LookupList.Lookup],
             "features": [unbuildFeature(f) for f in table.FeatureList.FeatureRecord],
