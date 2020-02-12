@@ -10,7 +10,6 @@ def unbuildLookup(lookup):
         "subtables": [],
         "flag": lookup.LookupFlag,
         "type": lookup.LookupType,
-        "format": lookup.SubTable[0].Format
     }
     for subtable in lookup.SubTable:
         for subtable_type, unbuilder in UNBUILD_MAP.items():
@@ -20,53 +19,59 @@ def unbuildLookup(lookup):
 
 
 def unbuildGSUB(table):
-    # TODO
-    results = {"version": table.Version}
-    results["lookups"] = [unbuildLookup(l) for l in table.LookupList.Lookup]
-    results["features"] = [unbuildFeature(f) for f in table.FeatureList.FeatureRecord]
-    results["scripts"] = [unbuildScript(s) for s in table.ScriptList.ScriptRecord]
-    return results
-
+    return {"version": table.Version,
+            "lookups": [unbuildLookup(l) for l in table.LookupList.Lookup],
+            "features": [unbuildFeature(f) for f in table.FeatureList.FeatureRecord],
+            "scripts": [unbuildScript(s) for s in table.ScriptList.ScriptRecord]
+    }
 
 def unbuildFeature(feature):
-    return {"FeatureParam": None, # TODO
+    return {"FeatureParams": unbuildFeatureParams(feature.Feature.FeatureParams),
             "lookup_indices": feature.Feature.LookupListIndex,
             "tag": feature.FeatureTag}
 
 
 def unbuildScript(script):
-    return {"DefaultFeatureIndexs": script.Script.DefaultLangSys.FeatureIndex,
+    return {"DefaultLangSys": {"ReqFeatureIndex": script.Script.DefaultLangSys.ReqFeatureIndex,
+                               "FeatureIndices": script.Script.DefaultLangSys.FeatureIndex},
             "LangSysRecords": [unbuildLangSysRecord(l) for l in script.Script.LangSysRecord],
             "tag": script.ScriptTag,
     }
 
 def unbuildLangSysRecord(lang):
-    # Do not return lookupOrder since it is NULL
-    # 
-    return {"RequiredFeatureIndex": 0xFFFF, # TODO get this from font
+    return {"RequiredFeatureIndex": lang.LangSys.ReqFeatureIndex,
             "FeatureIndices": lang.LangSys.FeatureIndex,
             "tag": lang.LangSysTag}
+
+
+def unbuildFeatureParams(featureParams):
+    # TODO Check if there are different versions of this table. All fonts on GF only
+    # have v0.0.
+    if not featureParams:
+        return None
+    return {"Version": featureParams.Version, "UINameID": featureParams.UINameID}
+
 
 # GSUB
 
 
 def unbuildSingleSubstSubtable(singleSubst):
-    return singleSubst.mapping
+    return {"format": singleSubst.Format, "subs": singleSubst.mapping}
 
 
 def unbuildMultipleSubstSubtable(multipleSubstSubtable):
-    return multipleSubstSubtable.mapping
+    return {"format": multipleSubstSubtable.Format, "subs": multipleSubstSubtable.mapping}
 
 
 def unbuildAlternateSubstSubtable(alternateSubstSubtable):
-    return alternateSubstSubtable.alternates
+    return {"format": alternateSubstSubtable.Format, "alternates": alternateSubstSubtable.alternates}
 
 
 def unbuildLigatureSubstSubtable(ligatureSubstSubtable):
-    results = {}
+    results = {"format": ligatureSubstSubtable.Format, "ligatures": {}}
     for k, ligatures in ligatureSubstSubtable.ligatures.items():
         for ligature in ligatures:
-            results[tuple([k] + ligature.Component)] = ligature.LigGlyph
+            results["ligatures"][tuple([k] + ligature.Component)] = ligature.LigGlyph
     return results
 
 
@@ -115,7 +120,8 @@ def unbuildContSubtable(subtable):
             if ruleset is None:
                 continue
             for rule in ruleset.SubClassRule:
-                rule_ = {'input': prefix + ["class{}".format(r) for r in rule.Class],
+                # TODO confirm it is always class1! 99% sure
+                rule_ = {'input': ["class1"] + ["class{}".format(r) for r in rule.Class],
                          'lookup_indices': [r.LookupListIndex for r in rule.SubstLookupRecord]
                 }
                 results['rules'].append(rule_)
@@ -156,7 +162,7 @@ def unbuildChainContSubtable(subtable):
                 results['rules'].append(rule_)
 
     elif subtable.Format == 3:
-        results = {"lookahead": [], "backtrack": [], "lookup_indices": [], "input": []}
+        results = {"lookahead": [], "backtrack": [], "lookup_indices": [], "input": [], "format": subtable.Format}
         for record in subtable.SubstLookupRecord:
             results['lookup_indices'].append(record.LookupListIndex)
         for coverage in subtable.LookAheadCoverage:
@@ -420,6 +426,7 @@ def unbuildMarkGlyphSetsDef(markGlyphSetsDef):
     if not markGlyphSetsDef:
         return None
     return [set(unbuildCoverage(m)) for m in markGlyphSetsDef.Coverage]
+
 
 
 UNBUILD_MAP = {
