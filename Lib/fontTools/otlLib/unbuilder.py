@@ -115,13 +115,15 @@ def unbuildContSubtable(subtable):
     if subtable.Format == 2:
         prefix = subtable.Coverage.glyphs
         classes = unbuildClassDef(subtable.ClassDef)
-        results['classes'] = {"class{}".format(k): v for k,v in classes.items()}
-        for ruleset in subtable.SubClassSet:
+        # results['prefix'] = prefix
+        results['classes'] = classes
+        for idx, ruleset in enumerate(subtable.SubClassSet):
             if ruleset is None:
                 continue
             for rule in ruleset.SubClassRule:
-                # TODO confirm it is always class1! 99% sure
-                rule_ = {'input': ["class1"] + ["class{}".format(r) for r in rule.Class],
+                # Consequently, the SubClassSet containing a context identifies a context’s first class component.
+                # TODO triple check tomorrow
+                rule_ = {'input': [idx] + rule.Class,
                          'lookup_indices': [r.LookupListIndex for r in rule.SubstLookupRecord]
                 }
                 results['rules'].append(rule_)
