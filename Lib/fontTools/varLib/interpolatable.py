@@ -160,6 +160,16 @@ def test(glyphsets, glyphs=None, names=None):
 	#for x in hist:
 	#	print(x)
 
+#def instantiateInstances(ttfont):
+#	results = []
+#	for inst in ttfont['fvar'].instances:
+#		coords = normalizeAxisLimits(ttfont, inst.coordinates)
+#		f = deepcopy(ttfont)
+#		instantiateGvar(f, coords)
+#		results.append(f)
+#	return results
+
+
 def main(args):
 	filenames = args
 	glyphs = None
@@ -170,9 +180,16 @@ def main(args):
 	from os.path import basename
 	names = [basename(filename).rsplit('.', 1)[0] for filename in filenames]
 
-	from fontTools.ttLib import TTFont
-	fonts = [TTFont(filename) for filename in filenames]
-
+#	from fontTools.ttLib import TTFont
+#		fonts = []
+#		for filename in filenames:
+#			ttfont = TTFont(filename)
+#			if 'fvar' in ttfont:
+#				fonts += instantiateInstances(ttfont)
+#			else:
+#				fonts.append(ttfont)
+#
+		fonts = [TTFont(f) for f in filenames]
 	glyphsets = [font.getGlyphSet() for font in fonts]
 	test(glyphsets, glyphs=glyphs, names=names)
 
