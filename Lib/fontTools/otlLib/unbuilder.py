@@ -118,7 +118,7 @@ def unbuildContSubtable(subtable):
         # results['prefix'] = prefix
         results['classes'] = classes
         for idx, ruleset in enumerate(subtable.SubClassSet):
-            if ruleset is None:
+            if not ruleset:
                 continue
             for rule in ruleset.SubClassRule:
                 # Consequently, the SubClassSet containing a context identifies a context’s first class component.
@@ -148,17 +148,17 @@ def unbuildChainContSubtable(subtable):
         backtrack_classes = unbuildClassDef(subtable.BacktrackClassDef)
         lookahead_classes = unbuildClassDef(subtable.LookAheadClassDef)
         input_classes = unbuildClassDef(subtable.InputClassDef)
-        results["backtrack_classes"] = {"backtrack{}".format(k): v for k,v in backtrack_classes.items()}
-        results["lookahead_classes"] = {"lookahead{}".format(k): v for k,v in lookahead_classes.items()}
-        results["input_classes"] = {"input{}".format(k): v for k,v in input_classes.items()}
+        results["backtrack_classes"] = backtrack_classes
+        results["lookahead_classes"] = lookahead_classes
+        results["input_classes"] = input_classes
 
-        for set_ in subtable.ChainSubClassSet:
-            if not set_:
+        for idx, ruleset in enumerate(subtable.ChainSubClassSet):
+            if not ruleset:
                 continue
-            for rule in set_.ChainSubClassRule:
-                rule_ = {"input": subtable.Coverage.glyphs + rule.Input,
-                         "lookahead": ["lookahead{}".format(i) for i in rule.LookAhead],
-                         "backtrack": ["backtrack{}".format(i) for i in rule.Backtrack],
+            for rule in ruleset.ChainSubClassRule:
+                rule_ = {"input": [idx] + rule.Input,
+                         "lookahead": rule.LookAhead,
+                         "backtrack": rule.Backtrack,
                          "lookup_indices": [r.LookupListIndex for r in rule.SubstLookupRecord]
                 }
                 results['rules'].append(rule_)

@@ -106,6 +106,48 @@ def buildLigatureSubstSubtable(mapping):
     return self
 
 
+def buildChainContSubtable(input_, backtrack, lookahead, lookup_indices, glyphMap):
+    """
+    [("i", "j")], [], [(glyph1, glyph2),(glyph3..)], [4,5]
+    
+    Can only build 6.3... same as feaLib
+    """
+    # TODO (MF) see if params can be used for other formats
+    self = ot.ChainContextSubst()
+    self.Format = 3
+    self.InputCoverage = [buildCoverage(i, glyphMap) for i in input_]
+    self.LookAheadCoverage = [buildCoverage(i, glyphMap) for i in lookahead]
+    self.BacktrackCoverage = [buildCoverage(i, glyphMap) for i in backtrack]
+    self.SubstLookupRecord = [buildSubstLookupRecord(l) for l in lookup_indices]
+    return self
+
+
+def buildChainContSubtable1(
+    input_,
+    backtrack,
+    lookahead,
+    lookup_induces,
+    glyphsMap,
+    ):
+    """
+    To specify the context, the coverage table lists the first glyph in the
+    input sequence, and the ChainSubRule subtable defines the rest.
+    """
+    self = ot.ChainContextSubst()
+    self.Format = 1
+
+    [
+        {"input": ["a", "b"], "lookahead": [], "backtrack": [], "lookups": []}
+        {"input": ["a", "e"], "lookahead": [], "backtrack": [], "lookups": []}
+    ]
+    
+
+def buildSubstLookupRecord(lookup_index):
+    self = ot.SubstLookupRecord()
+    self.LookupListIndex = lookup_index
+    # TODO check this is always 0
+    self.SequenceIndex = 0
+    return self
 # GPOS
 
 
@@ -658,3 +700,24 @@ class ClassDefBuilder(object):
         classDef = ot.ClassDef()
         classDef.classDefs = glyphClasses
         return classDef
+
+if __name__ == "__main__":
+
+    from fontTools.otlLib.unbuilder import unbuildChainContSubtable
+    GLYPHS = (
+        ".notdef space zero one two three four five six "
+        "A B C a b c grave acute cedilla f_f_i f_i c_t"
+    ).split()
+    GLYPHMAP = {name: num for num, name in enumerate(GLYPHS)}
+    f = buildChainContSubtable
+    st = f(
+        [("A", "B")],
+        [], 
+        [("C", "a"),("b")],
+        [3,4],
+        GLYPHMAP
+    )
+    print(st)
+    from pprint import pprint
+    pprint(unbuildChainContSubtable(st))
+

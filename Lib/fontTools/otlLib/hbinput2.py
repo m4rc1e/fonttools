@@ -3,12 +3,16 @@ from fontTools.ttLib import TTFont
 import sys
 from pprint import pprint
 import subprocess
+import logging
 
 """
 
 """
 
-def all_glyphs(ttfont, ignore_features=["aalt", "c2sc"]):
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+
+def all_glyphs(ttfont, results, iterations=2, ignore_features=["aalt", "c2sc"]):
     """
     in/out:
 
@@ -26,42 +30,43 @@ def all_glyphs(ttfont, ignore_features=["aalt", "c2sc"]):
           - make join found inputs using results e.g i = f + f = join(results['f'] + results['f'])
           - put back into results results[v] = i
     """
-    results = {v: {
-        "input": chr(k),
-        "features": [],
-        "lang": "dflt",
-        "script": "DFLT"
-    } for k,v in ttfont.getBestCmap().items()}
+    if iterations == 0:
+        return
+
+    gsub = unbuildTable(ttfont["GSUB"].table)
+
     processed = set()
-
-    gsub = unbuildGSUB(ttfont["GSUB"].table)
-
-    # attempt just gsub lookupType 1 with DFLT script
+    lk_order = []
     for script in gsub['scripts']:
         lang_features = [gsub["features"][i] for i in script["DefaultLangSys"]["FeatureIndices"]]
         lang_features.sort(key=lambda k: k["lookup_indices"])
         for feature in lang_features:
             if feature["tag"] in ignore_features:
                 continue
-            for l_idx in feature['lookup_indices']: # todo change
+            for l_idx in feature['lookup_indices']:
+                log.debug("processing lookup {}".format(l_idx))
+                lk_order.append(l_idx)
                 if l_idx in processed:
                     continue
                 lookup = gsub["lookups"][l_idx]
-
-                if lookup["type"] == 1:
-                    _process_singlesub(lookup, results, feature['tag'], script["tag"], "dflt")
-                if lookup["type"] == 2:
-                    _process_multisub(lookup, results, feature['tag'], script['tag'], "dflt")
-                elif lookup["type"] == 4:
-                    _process_ligasub(lookup, results, feature["tag"], script["tag"], "dflt")
-#                if lookup["type"] == 5:
-#                    _process_context(lookup, results, feature['tag'], script['tag'], "dflt")
-                elif lookup["type"] == 6:
-                    _process_chainingcontext(lookup, results, feature['tag'], script["tag"], "dflt")
+                _process_lookup(lookup, results, feature['tag'], script['tag'], "dflt")
                 processed.add(l_idx)
-    for lk in gsub['lookups']:
-        print(lk["type"])
-    return results
+    all_glyphs(ttfont, results, iterations-1, ignore_features)
+    return
+
+
+
+def _process_lookup(lookup, results, feature_tag, script_tag, lang_tag):
+    if lookup["type"] == 1:
+        _process_singlesub(lookup, results, feature_tag, script_tag, lang_tag)
+    elif lookup["type"] == 2:
+        _process_multisub(lookup, results, feature_tag, script_tag, lang_tag)
+    elif lookup["type"] == 4:
+        _process_ligasub(lookup, results, feature_tag, script_tag, lang_tag)
+    elif lookup["type"] == 5:
+        _process_context(lookup, results, feature_tag, script_tag, lang_tag)
+    elif lookup["type"] == 6:
+        _process_chainingcontext(lookup, results, feature_tag, script_tag, lang_tag)
 
 
 def _process_singlesub(lookup, results, feature, script, lang):
@@ -74,8 +79,6 @@ def _process_singlesub(lookup, results, feature, script, lang):
                 new["lang"] = lang
                 new["script"] = script
                 results[_out] = new
-            else:
-                print("MISSING", _in, feature)
 
 
 def _process_multisub(lookup, results, feature, script, lang):
@@ -98,29 +101,91 @@ def _process_ligasub(lookup, results, feature, script, lang):
             results[_out] = new
 
 
-def _process_chainingcontext(lookup, results, feature, script, lang):
-    for subtable in lookup["subtables"]:
-        if  subtable["format"] == 3:
-            _process_chainingcontext3(lookup, results, feature, script, lang)
-
-
 def _process_context(lookup, results, feature, script, lang):
     for subtable in lookup["subtables"]:
-        if  subtable["format"] == 2:
+        if  subtable["format"] == 1:
+            _process_context1(lookup, results, feature, script, lang)
+        elif  subtable["format"] == 2:
             _process_context2(lookup, results, feature, script, lang)
+        elif subtable["format"] == 3:
+            _process_context3(lookup, results, feature, script, lang)
+
+
+def _process_context1(lookup, results, feature, script, lang):
+    for subtable in lookup["subtables"]:
+        for rule in subtable["rules"]:
+            new = {'features': [feature], "input": "", "lang": lang, "script": script}
+            for glyph in rule["input"]:
+                new["input"] += results[glyph]["input"]
+                new["features"] += results[glyph]["features"]
+            results[tuple(rule["input"])] = new
 
 
 def _process_context2(lookup, results, feature, script, lang):
     for subtable in lookup["subtables"]:
-        if subtable['format'] == 2:
-            from pprint import pprint
-            pprint(subtable)
+        for rule in subtable["rules"]:
+            if not len([c for c in rule['input'] if c in subtable['classes']]) == len(rule['input']):
+                continue
+            combos = [subtable["classes"][c] for c in rule["input"]]
+            permutations = perms(combos)
+            skipped = 0
+            for perm in permutations:
+                if not has_all_glyphs(perm, results):
+                    skipped+=1
+                    continue
+                new = {'features': [feature], "input": "", "lang": lang, "script": script}
+                for glyph in perm:
+                    new["input"] += results[glyph]["input"]
+                    new["features"] += results[glyph]["features"]
+                results[tuple(perm)] = new
 
 
-def _process_chainingcontext3(lookup, results, feature, script, lang, limit=10000):
+def _process_context3(lookup, results, feature, script, lang):
+    # TODO must add to spec first
+    pass
+
+def _process_chainingcontext(lookup, results, feature, script, lang):
     for subtable in lookup["subtables"]:
-        # we only want to append just the first and last glyph of the lookahead
-        # and back track contexts due to run time.
+        if subtable["format"] == 1:
+            _process_chainingcontext1(lookup, results, feature, script, lang)
+        elif subtable["format"] == 2:
+            _process_chainingcontext2(lookup, results, feature, script, lang)
+        elif subtable["format"] == 3:
+            _process_chainingcontext3(lookup, results, feature, script, lang)
+
+
+def _process_chainingcontext1(lookup, results, feature, script, lang, limit=100):
+    for subtable in lookup["subtables"]:
+        for rule in subtable["rules"]:
+            new = {'features': [feature], "input": "", "lang": lang, "script": script}
+            for k in ["backtrack", "input", "lookahead"]:
+                for glyph in rule[k]:
+                    new["input"] += results[glyph]["input"]
+                    new["features"] += results[glyph]["features"]
+            results[tuple(rule["input"])] = new
+
+
+def _process_chainingcontext2(lookup, results, feature, script, lang, limit=100):
+    for subtable in lookup["subtables"]:
+        for rule in subtable["rules"]:
+            backtrack = [subtable["backtrack_classes"][c] for c in rule["backtrack"]]
+            input_ = [subtable["input_classes"][c] for c in rule["input"]]
+            lookahead = [subtable["lookahead_classes"][c] for c in rule["lookahead"]]
+            permutations = perms(backtrack+input_+lookahead)
+            for perm in permutations:
+                if not has_all_glyphs(perm, results):
+                    continue
+                new = {'features': [feature], "input": "", "lang": lang, "script": script}
+                for glyph in perm:
+                    new["input"] += results[glyph]["input"]
+                    new["features"] += results[glyph]["features"]
+                results[tuple(perm)] = new
+
+
+def _process_chainingcontext3(lookup, results, feature, script, lang, limit=1):
+    for subtable in lookup["subtables"]:
+        # Process the reference lookups first
+        _process_lookup
         backtrack = subtable["backtrack"][:limit] if subtable["backtrack"] else []
         lookahead = subtable["lookahead"][:limit] if subtable["lookahead"] else []
         combos = backtrack + subtable["input"] + lookahead
@@ -128,7 +193,6 @@ def _process_chainingcontext3(lookup, results, feature, script, lang, limit=1000
         skipped = 0
         for perm in permutations:
             if not has_all_glyphs(perm, results):
-                print('skipping', perm)
                 skipped+=1
                 continue
             new = {'features': [feature], "input": "", "lang": lang, "script": script}
@@ -136,18 +200,18 @@ def _process_chainingcontext3(lookup, results, feature, script, lang, limit=1000
                 new["input"] += results[glyph]["input"]
                 new["features"] += results[glyph]["features"]
             results[tuple(perm)] = new
-    print(skipped,'skipped')
 
 
 def has_all_glyphs(perm, results):
     for glyph in perm:
         if glyph not in results:
-            print(glyph)
+            log.debug(f"Missing {glyph}")
             return False
     return True
 
 
 def perms(a, s=0, p=[], res=[]):
+    """[[1,2][3,4]] --> [[1,3], [1,4], [2,3], [2,4]]"""
     if len(p) == len(a):
         res.append(p[:])
         return res
@@ -159,33 +223,32 @@ def perms(a, s=0, p=[], res=[]):
     return res
 
 
-def reorder_character_seq(hbfont, seq):
-    hb.ot_font_set_funcs(font)
+def main():
+    ttfont = TTFont(sys.argv[1])
 
-    buf = hb.Buffer()
+    results = {v: {
+        "input": chr(k),
+        "features": [],
+        "lang": "dflt",
+        "script": "DFLT"
+    } for k,v in ttfont.getBestCmap().items()}
+    
+    a = len(results)
+    all_glyphs(ttfont, results)
+    pprint(results, open("/Users/marcfoley/Desktop/COMBOS.txt", "w"))
 
-    buf.add_str(seq['input'])
-    buf.guess_segment_properties()
-
-    features = {"kern": True, "liga": True}
-    hb.shape(font, buf, features)
-
-    infos = buf.glyph_infos
-    if len([i for i in infos if i.codepoint == 188]) > 0:
-        seq['input'] = seq['input'][1:] + seq['input'][0]
-
+#    for glyph in glyphs:
+#        if isinstance(glyph, tuple):
+#            reorder_character_seq(font, glyphs[glyph])
+#    i = " ".join([g["input"] for g in glyphs.values()]) 
+#    print(i)
+#    for r,o in glyphs.items():
+#        print(o)
+#    print(len(glyphs))
 
 if __name__ == "__main__":
-    import uharfbuzz as hb
-    ttfont = TTFont(sys.argv[1])
-    with open(sys.argv[1], 'rb') as fontfile:
-        fontdata = fontfile.read()
-    face = hb.Face(fontdata)
-    font = hb.Font(face)
-
-    glyphs = all_glyphs(ttfont)
-    for glyph in glyphs:
-        if isinstance(glyph, tuple):
-            reorder_character_seq(font, glyphs[glyph])
-    i = " ".join([g["input"] for g in glyphs.values()]) 
-    print(i)
+    main()
+#    f = TTFont('/Users/marcfoley/Type/fonts/ofl/notosans/NotoSans-Regular.ttf')
+#    for i, lk in enumerate(f['GSUB'].table.LookupList.Lookup):
+#        print(i, lk.LookupType, lk.SubTable[0].Format)
+#    pprint(unbuildLookup(f['GSUB'].table.LookupList.Lookup[22])) # 76
